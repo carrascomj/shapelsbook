@@ -1989,6 +1989,7 @@ dependencies = [
  "leptos_meta",
  "leptos_router",
  "log",
+ "lsp-types",
  "shapels",
  "wasm-bindgen",
  "wasm-bindgen-test",

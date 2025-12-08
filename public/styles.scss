@@ -53,13 +53,15 @@ button {
 
 .code-wrapper {
   position: relative;
+  display: grid;
   width: min(900px, 92vw);
   font-family: "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   margin: 1rem auto;
-  overflow: auto;
 }
 
 .code-overlay {
+  grid-area: 1 / 1;
+  position: relative;
   white-space: pre;
   padding: 1rem;
   border: 1px solid #d7dbe0;
@@ -67,7 +69,6 @@ button {
   background: #f8fafc;
   color: #111827;
   line-height: 1.4rem;
-  min-height: 320px;
   box-sizing: border-box;
   pointer-events: none;
   width: 100%;
@@ -76,8 +77,8 @@ button {
 }
 
 .code-input {
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
+  position: relative;
   width: 100%;
   height: 100%;
   padding: 1rem;
@@ -94,6 +95,15 @@ button {
   overflow: auto;
   text-align: left;
   -webkit-user-modify: read-write-plaintext-only; /* hint Safari/iOS to avoid rich corrections */
+}
+
+.hl-keyword {
+  color: #63326E !important;
+  font-weight: 600;
+}
+
+.hl-string {
+  color: #474B24 !important;
 }
 
 .measure-char {

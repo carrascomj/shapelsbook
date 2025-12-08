@@ -1,11 +1,11 @@
-use leptos::prelude::*;
 use leptos::prelude::window;
+use leptos::prelude::*;
+use leptos::wasm_bindgen::JsCast;
+use leptos::web_sys::{HtmlElement, HtmlSpanElement, HtmlTextAreaElement};
 use lsp_types::{Diagnostic, Position, Range};
 use shapels::analyze_source;
 use std::collections::HashSet;
 use std::rc::Rc;
-use leptos::wasm_bindgen::JsCast;
-use leptos::web_sys::{HtmlElement, HtmlSpanElement, HtmlTextAreaElement};
 
 #[derive(Debug, Clone)]
 struct LineRender {
@@ -17,6 +17,63 @@ struct LineRender {
 struct RenderSegment {
     text: String,
     has_diag: bool,
+}
+
+fn highlight_tokens(text: &str) -> Vec<(String, Option<&'static str>)> {
+    let keywords = ["import", "from", "def", "return"];
+    let mut out = Vec::new();
+    let mut buf = String::new();
+    let mut chars = text.chars().peekable();
+    let mut in_string = false;
+    let mut string_delim = '\0';
+    while let Some(ch) = chars.next() {
+        if in_string {
+            buf.push(ch);
+            if ch == string_delim {
+                out.push((buf.clone(), Some("hl-string")));
+                buf.clear();
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' || ch == '\'' {
+            if !buf.is_empty() {
+                out.push((buf.clone(), None));
+                buf.clear();
+            }
+            in_string = true;
+            string_delim = ch;
+            buf.push(ch);
+            continue;
+        }
+
+        if ch.is_alphanumeric() || ch == '_' {
+            buf.push(ch);
+            // continue to build word
+            continue;
+        } else {
+            if !buf.is_empty() {
+                let cls = if keywords.contains(&buf.as_str()) {
+                    Some("hl-keyword")
+                } else {
+                    None
+                };
+                out.push((buf.clone(), cls));
+                buf.clear();
+            }
+            out.push((ch.to_string(), None));
+        }
+    }
+    if !buf.is_empty() {
+        let cls = if keywords.contains(&buf.as_str()) {
+            Some("hl-keyword")
+        } else {
+            None
+        };
+        out.push((buf, cls));
+    }
+    out
 }
 
 fn position_to_offset(src: &str, pos: &Position) -> Option<usize> {
@@ -116,10 +173,7 @@ fn split_lines_with_metadata(
                 .iter()
                 .any(|(s, e, _)| seg_start < *e && seg_end > *s);
 
-            segments.push(RenderSegment {
-                text,
-                has_diag,
-            });
+            segments.push(RenderSegment { text, has_diag });
         }
 
         if segments.is_empty() {
@@ -202,11 +256,15 @@ def matmul(x: F[T, "B X R"], y: F[T, "R S"]) -> F[T, "B S"]:
                                 } else {
                                     "diag-range diag-none"
                                 };
+                                let tokens = highlight_tokens(&segment.text);
                                 view! {
-                                    <span
-                                        class=range_class
-                                    >
-                                        {segment.text.clone()}
+                                    <span class="code-span">
+                                        {tokens.into_iter().map(move |(txt, hl)| {
+                                            let cls = hl
+                                                .map(|c| format!("{range_class} {c}"))
+                                                .unwrap_or_else(|| range_class.to_string());
+                                            view! { <span class=cls>{txt}</span> }
+                                        }).collect_view()}
                                     </span>
                                 }
                                 .into_view()

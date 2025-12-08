@@ -96,6 +96,13 @@ button {
   -webkit-user-modify: read-write-plaintext-only; /* hint Safari/iOS to avoid rich corrections */
 }
 
+.measure-char {
+  position: absolute;
+  visibility: hidden;
+  font: inherit;
+  white-space: pre;
+}
+
 .diag-range {
   text-decoration: underline wavy #dc2626;
   text-decoration-thickness: 2px;
@@ -136,4 +143,18 @@ button {
   display: inline-flex;
   gap: 0.35rem;
   white-space: pre;
+}
+
+.hover-popup {
+  position: absolute;
+  left: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  max-width: 90%;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  z-index: 5;
 }

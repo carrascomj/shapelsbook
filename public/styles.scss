@@ -27,7 +27,11 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-around;
-  align-items: center;
+  align-items: stretch;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  text-align: left;
 }
 
 .buttons {
@@ -50,7 +54,10 @@ h6 {
   color: #111111;
 }
 
-p,
+p {
+  margin: 0.5rem 0 0.75rem;
+}
+
 button {
   margin: var(--size-6);
 }
@@ -181,4 +188,21 @@ button {
   pointer-events: none;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
   z-index: 5;
+}
+
+inline-code {
+  font-family: "Monaspace Neon", monospace;
+  font-size: inherit;
+}
+
+/* inline-Code in text */
+p > inline-code,
+li > inline-code,
+dd > inline-code,
+td > inline-code {
+  background: #ffeff0;
+  word-wrap: break-word;
+  box-decoration-break: clone;
+  padding: .1rem .3rem .2rem;
+  border-radius: .2rem;
 }

@@ -218,16 +218,7 @@ fn split_lines_with_metadata(
 /// On change, it reruns the language serve, updates the hovers
 /// and the diagnostics.
 #[component]
-fn CodeInput() -> impl IntoView {
-    let initial_code = r#"
-from jaxtyping import Float as F
-from torch import Tensor as T
-    
-def matmul(x: F[T, "B X R"], y: F[T, "R S"]) -> F[T, "B S"]:
-    z: F[T, "B X R"] = x @ y
-    return z 
-"#;
-
+fn CodeInput<'a>(initial_code: &'a str) -> impl IntoView {
     let (code, set_code) = signal(initial_code.to_string());
     let text_ref = NodeRef::<leptos::html::Textarea>::new();
     let overlay_ref = NodeRef::<leptos::html::Pre>::new();
@@ -305,11 +296,11 @@ def matmul(x: F[T, "B X R"], y: F[T, "R S"]) -> F[T, "B S"]:
                 }
                 on:mousemove=move |ev| {
                     if let (Some(textarea), Some(measure)) = (text_ref.get(), measure_ref.get()) {
-                        if let Some((char_w, line_h, pad_left, pad_top)) =
+                        if let Some((char_w, line_h, _pad_left, _pad_top)) =
                             measure_metrics(&textarea, &measure)
                         {
-                            let x = ev.offset_x() as f64 + textarea.scroll_left() as f64 - pad_left;
-                            let y = ev.offset_y() as f64 + textarea.scroll_top() as f64 - pad_top;
+                            let x = ev.offset_x() as f64 + textarea.scroll_left() as f64;
+                            let y = ev.offset_y() as f64 + textarea.scroll_top() as f64;
                             if char_w > 0.0 && line_h > 0.0 && x >= 0.0 && y >= 0.0 {
                                 let line = (y / line_h).floor() as u32;
                                 let character = (x / char_w).floor() as u32;
@@ -339,15 +330,14 @@ def matmul(x: F[T, "B X R"], y: F[T, "R S"]) -> F[T, "B S"]:
                         let (top, left) = if let (Some(textarea), Some(measure)) =
                             (text_ref.get(), measure_ref.get())
                         {
-                            if let Some((char_w, line_h, pad_left, pad_top)) =
-                                measure_metrics(&textarea, &measure)
+                        if let Some((char_w, line_h, pad_left, _pad_top)) =
+                            measure_metrics(&textarea, &measure)
                             {
                                 let scroll_top = textarea.scroll_top() as f64;
                                 let scroll_left = textarea.scroll_left() as f64;
-                                (
-                                    (line as f64) * line_h - scroll_top + pad_top + 2.0,
-                                    x + pad_left - scroll_left + char_w * 0.5 + 8.0,
-                                )
+                                let top = (line as f64) * line_h - scroll_top;
+                                let left = x - scroll_left + char_w * 0.5 + 8.0 + pad_left;
+                                (top, left)
                             } else {
                                 (0.0, 0.0)
                             }
@@ -390,6 +380,29 @@ fn parse_px(value: Option<String>) -> f64 {
 /// Default Home Page
 #[component]
 pub fn Home() -> impl IntoView {
+    let snippet_1= r#"
+import torch
+    
+def matmul(x, y):
+    B, X, Y, Z = 32, 12, 8, 2
+    x = torch.Tensor(B, X, Y)
+    y = torch.Tensor(Y, Z)
+    z = x @ y.T
+    return z 
+"#;
+    let snippet_2= r#"
+from jaxtyping import Float
+import torch
+    
+def matmul_permute(x: Float[torch.Tensor, "B X Y"], y):
+    B, X, Y, Z = 32, 12, 8, 2
+    Y, Z = y.shape
+    z = x @ y
+    w = z.permute(1, 2, 0) @ torch.zeros([B, X])
+    return w
+"#;
+
+
     view! {
         <ErrorBoundary fallback=|errors| {
             view! {
@@ -414,8 +427,43 @@ pub fn Home() -> impl IntoView {
 
                 <h1>"shapels: a primer"</h1>
 
-                <CodeInput attr:spellcheck="false"/>
+                <p>"shapels provides static analysis for torch operations."</p>
+                <p>"Check the following snippet:"</p>
 
+                <CodeInput attr:spellcheck="false" initial_code=snippet_1/>
+
+                <p>"As you can see, shapels emits a diagnostic because it can assert that the two tensors cannot be multiplied."</p>
+                <p><em>"The code above is interactive"</em>": remove the "<inline-code>".T"</inline-code>" and see what happens"</p>
+                <p>"As you may have noticed, you can hover over the variables to display their inferred shape."</p>
+                <p><em>"Sounds good, how do I install this in my favourite editor of choice?"</em></p>
+                <p>
+                    "Head over to the "
+                    <a href="https://github.com/carrascomj/shapels?tab=readme-ov-file#editor-support">"Editor support section"</a>
+                    " to find setup instructions."
+                </p>
+                <p>"But how does it work?"</p>
+                <p>
+                    "Shapels first requires an initial tensor shape calls. Then, by looking at the tensor operations, shapels computes the shape of each tensor statically. In the case above, it was eable to get the initial shape from the"
+                    <inline-code>"torch.Tensor"</inline-code>
+                    "call. But that's not the only way!"
+                </p>
+                <CodeInput attr:spellcheck="false" initial_code=snippet_2/>
+                <p>
+                    "As you can see, one can use "
+                    <a href="https://docs.kidger.site/jaxtyping/">"jaxtyping"</a>
+                    " to annotate the shapes of the tensors. Other options are unrolling the shape, like the case of "
+                    <inline-code>"y"</inline-code>
+                    " above or common creaption ops like"
+                    <inline-code>"torch.zeros"</inline-code>
+                    ", "
+                    <inline-code>"torch.ones"</inline-code>
+                    ", etc."
+                </p>
+                <p>
+                    "With that said, not all torch operations are understood by shapels jet. If you find one that you would like to have implemented, feel free"
+                    <a href="https://github.com/carrascomj/shapels/issues">" open an issue"</a>
+                    "!"
+                </p>
             </div>
         </ErrorBoundary>
     }

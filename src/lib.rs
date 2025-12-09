@@ -11,6 +11,13 @@ use crate::pages::home::Home;
 /// An app router which renders the homepage and handles 404's
 #[component]
 pub fn App() -> impl IntoView {
+    // Base path for deployment on GitHub Pages; defaults to repo name when not in debug.
+    let base = if cfg!(debug_assertions) {
+        "/"
+    } else {
+        "/shapelsbook/"
+    };
+
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
 
@@ -25,9 +32,11 @@ pub fn App() -> impl IntoView {
         <Meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
         <Router>
-            <Routes fallback=|| view! { NotFound }>
-                <Route path=path!("/") view=Home />
-            </Routes>
+            <Router base=base>
+                <Routes fallback=|| view! { NotFound }>
+                    <Route path=path!("/") view=Home />
+                </Routes>
+            </Router>
         </Router>
     }
 }

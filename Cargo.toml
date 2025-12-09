@@ -13,7 +13,7 @@ leptos_router = { version = "0.8" }
 console_log = "1"
 log = "0.4"
 console_error_panic_hook = "0.1"
-shapels = { version = "0.2.0", path = "../shapels" }
+shapels = { version = "0.3.0" }
 lsp-types = "0.95"
 
 # utils

@@ -443,7 +443,7 @@ def matmul_permute(x: Float[torch.Tensor, "B X Y"], y):
                 </p>
                 <p>"But how does it work?"</p>
                 <p>
-                    "Shapels first requires an initial tensor shape calls. Then, by looking at the tensor operations, shapels computes the shape of each tensor statically. In the case above, it was eable to get the initial shape from the"
+                    "Shapels first requires an initial tensor shape calls. Then, by looking at the tensor operations, shapels computes the shape of each tensor statically. In the case above, it was able to get the initial shape from the"
                     <inline-code>"torch.Tensor"</inline-code>
                     "call. But that's not the only way!"
                 </p>
@@ -453,14 +453,14 @@ def matmul_permute(x: Float[torch.Tensor, "B X Y"], y):
                     <a href="https://docs.kidger.site/jaxtyping/">"jaxtyping"</a>
                     " to annotate the shapes of the tensors. Other options are unrolling the shape, like the case of "
                     <inline-code>"y"</inline-code>
-                    " above or common creaption ops like"
+                    " above or common creation ops like"
                     <inline-code>"torch.zeros"</inline-code>
                     ", "
                     <inline-code>"torch.ones"</inline-code>
                     ", etc."
                 </p>
                 <p>
-                    "With that said, not all torch operations are understood by shapels jet. If you find one that you would like to have implemented, feel free"
+                    "With that said, not all torch operations are understood by shapels yet. If you find one that you would like to have implemented, feel free"
                     <a href="https://github.com/carrascomj/shapels/issues">" open an issue"</a>
                     "!"
                 </p>

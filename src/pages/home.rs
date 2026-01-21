@@ -218,16 +218,21 @@ fn split_lines_with_metadata(
 /// On change, it reruns the language serve, updates the hovers
 /// and the diagnostics.
 #[component]
-fn CodeInput<'a>(initial_code: &'a str) -> impl IntoView {
+fn CodeInput<'a>(
+    initial_code: &'a str,
+    #[prop(optional, into)] wrapper_class: Option<String>,
+) -> impl IntoView {
     let (code, set_code) = signal(initial_code.to_string());
     let text_ref = NodeRef::<leptos::html::Textarea>::new();
     let overlay_ref = NodeRef::<leptos::html::Pre>::new();
     let measure_ref = NodeRef::<leptos::html::Span>::new();
     let (hover_popup, set_hover_popup) = signal(None::<(usize, f64, String)>);
     let analysis_store = StoredValue::new_local(Rc::new(analyze_source(initial_code)));
+    let wrapper_class = wrapper_class.unwrap_or_default();
+    let wrapper_class = format!("code-wrapper {}", wrapper_class).trim().to_string();
 
     view! {
-        <div class="code-wrapper">
+        <div class=wrapper_class>
             <pre class="code-overlay" aria-hidden="true" node_ref=overlay_ref>
                 {move || {
                     // refresh analysis once per render
@@ -296,12 +301,13 @@ fn CodeInput<'a>(initial_code: &'a str) -> impl IntoView {
                 }
                 on:mousemove=move |ev| {
                     if let (Some(textarea), Some(measure)) = (text_ref.get(), measure_ref.get()) {
-                        if let Some((char_w, line_h, _pad_left, _pad_top)) =
+                        if let Some((char_w, line_h, pad_left, pad_top)) =
                             measure_metrics(&textarea, &measure)
                         {
-                            let x = ev.offset_x() as f64 + textarea.scroll_left() as f64;
-                            let y = ev.offset_y() as f64 + textarea.scroll_top() as f64;
+                            let x = ev.offset_x() as f64 + textarea.scroll_left() as f64 - pad_left;
+                            let y = ev.offset_y() as f64 + textarea.scroll_top() as f64 - pad_top;
                             if char_w > 0.0 && line_h > 0.0 && x >= 0.0 && y >= 0.0 {
+                                let y = (y - (line_h * 0.25)).max(0.0);
                                 let line = (y / line_h).floor() as u32;
                                 let character = (x / char_w).floor() as u32;
                                 let pos = Position { line, character };
@@ -377,10 +383,11 @@ fn parse_px(value: Option<String>) -> f64 {
         .and_then(|s| s.trim_end_matches("px").parse::<f64>().ok())
         .unwrap_or(0.0)
 }
+
 /// Default Home Page
 #[component]
 pub fn Home() -> impl IntoView {
-    let snippet_1= r#"
+    let snippet_1 = r#"
 import torch
     
 def matmul(x, y):
@@ -390,7 +397,7 @@ def matmul(x, y):
     z = x @ y.T
     return z 
 "#;
-    let snippet_2= r#"
+    let snippet_2 = r#"
 from jaxtyping import Float
 import torch
     
@@ -401,7 +408,6 @@ def matmul_permute(x: Float[torch.Tensor, "B X Y"], y):
     w = z.permute(1, 2, 0) @ torch.zeros([B, X])
     return w
 "#;
-
 
     view! {
         <ErrorBoundary fallback=|errors| {
@@ -464,6 +470,79 @@ def matmul_permute(x: Float[torch.Tensor, "B X Y"], y):
                     <a href="https://github.com/carrascomj/shapels/issues">" open an issue"</a>
                     "!"
                 </p>
+            </div>
+        </ErrorBoundary>
+    }
+}
+
+/// A big empty playground for testing code in a single page.
+pub fn Playground() -> impl IntoView {
+    let prefilled_code_snippet = r#"
+from jaxtyping import Float
+import torch
+
+
+class UserLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(x, y):
+        return x @ y.permute(1, 0)
+
+    def annotated_method(x: Float[Tensor, "B X Y"], y: Float[Tensor, "Z Y"]) -> tuple[Float[Tensor, "B X Z"], Float[Tensor, "Z Y"]]:
+        """Hints in the signature will shortcircuit inference at the caller site."""
+        some_ones = torch.ones_like(y)
+        return x @ y.permute(1, 0), some_ones
+
+
+def some_function(x: Float[torch.Tensor, "B X Y"], y, linear: UserLinear):
+    # at this point, the shape of x is known because of jaxtyping's annotation
+    # y shape can be inferred because `x` (and thus x.size(2)) is known
+    y = torch.zeros(32, x.size(2))
+    # shapels here jumps to UserLinear.forward and runs inference given
+    # the shapes of x and y (that are known at this point)
+    z = linear(x, y)
+    # fine: x has a shape identical shape as the hint,
+    # y is alpha compatible (same dimensions, different name) with the signature so it is fine
+    fine, not_ones = linear.annotated_method(x, y)
+    # this  would not be fine since now the second argument is not compatible with the type
+    # hint, so shapels reports a diagnostics
+    not_fine = linear.annotated_method(x, x)
+"#;
+
+    view! {
+        <ErrorBoundary fallback=|errors| {
+            view! {
+                <h1>"Uh oh! Something went wrong!"</h1>
+
+                <p>"Errors: "</p>
+                // Render a list of errors as strings - good for development purposes
+                <ul>
+                    {move || {
+                        errors
+                            .get()
+                            .into_iter()
+                            .map(|(_, e)| view! { <li>{e.to_string()}</li> })
+                            .collect_view()
+                    }}
+
+                </ul>
+            }
+        }>
+
+            <div class="container">
+
+                <h1>"shapels playground"</h1>
+
+                <p>
+                    Edit the code below and hover with the mouse over the tensors, running <a href="https://github.com/carrascomj/shapels/issues">" shapels "</a>
+                    in realtime!
+                </p>
+                <CodeInput
+                    attr:spellcheck="false"
+                    initial_code=prefilled_code_snippet
+                    wrapper_class="code-wrapper--playground"
+                />
             </div>
         </ErrorBoundary>
     }

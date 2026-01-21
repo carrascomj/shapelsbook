@@ -6,17 +6,13 @@ use leptos_router::{components::*, path};
 mod pages;
 
 // Top-Level pages
-use crate::pages::home::Home;
+use crate::pages::home::{Home, Playground};
 
 /// An app router which renders the homepage and handles 404's
 #[component]
 pub fn App() -> impl IntoView {
     // Base path for deployment on GitHub Pages; defaults to repo name when not in debug.
-    let base = if cfg!(debug_assertions) {
-        "/"
-    } else {
-        "/shapelsbook/"
-    };
+    let base = if cfg!(debug_assertions) { "" } else { "/shapelsbook" };
 
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
@@ -31,12 +27,11 @@ pub fn App() -> impl IntoView {
         <Meta charset="UTF-8" />
         <Meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-        <Router>
-            <Router base=base>
-                <Routes fallback=|| view! { NotFound }>
-                    <Route path=path!("/") view=Home />
-                </Routes>
-            </Router>
+        <Router base=base>
+            <Routes fallback=|| view! { NotFound }>
+                <Route path=path!("/") view=Home />
+                <Route path=path!("/playground") view=Playground />
+            </Routes>
         </Router>
     }
 }

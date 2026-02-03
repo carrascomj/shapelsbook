@@ -11,9 +11,9 @@ use std::sync::Arc;
 fn render_hover_text(info: &shapels::HoverInfo) -> String {
     if let Some(shape) = &info.shape {
         format!(
-            "`{}`: {}",
+            "{}: {}",
             shape.render(),
-            shape.dtype.as_deref().unwrap_or("")
+            shape.dtype.as_deref().unwrap_or("Any")
         )
     } else {
         String::from("hover unavailable")

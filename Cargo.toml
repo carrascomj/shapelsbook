@@ -15,6 +15,7 @@ log = "0.4"
 console_error_panic_hook = "0.1"
 shapels = { version = "0.4.0" }
 lsp-types = "0.95"
+web-sys = { version = "0.3", features = ["Element", "DomRect"] }
 
 # utils
 # strum = { version = "0.25", features = ["derive", "strum_macros"] }

@@ -1,113 +1,12 @@
+use leptos::ev::MouseEvent;
 use leptos::prelude::window;
 use leptos::prelude::*;
 use leptos::wasm_bindgen::JsCast;
-use leptos::web_sys::{HtmlElement, HtmlSpanElement, HtmlTextAreaElement};
-use lsp_types::{Diagnostic, Position, Range};
+use leptos::web_sys::Element;
+use lsp_types::{Diagnostic, Position};
 use shapels::analyze_source;
 use std::collections::HashSet;
-use std::rc::Rc;
-
-#[derive(Debug, Clone)]
-struct LineRender {
-    segments: Vec<RenderSegment>,
-    virtual_texts: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-struct RenderSegment {
-    text: String,
-    has_diag: bool,
-}
-
-fn highlight_tokens(text: &str) -> Vec<(String, Option<&'static str>)> {
-    let keywords = ["import", "from", "def", "return"];
-    let mut out = Vec::new();
-    let mut buf = String::new();
-    let mut chars = text.chars().peekable();
-    let mut in_string = false;
-    let mut string_delim = '\0';
-    while let Some(ch) = chars.next() {
-        if in_string {
-            buf.push(ch);
-            if ch == string_delim {
-                out.push((buf.clone(), Some("hl-string")));
-                buf.clear();
-                in_string = false;
-            }
-            continue;
-        }
-
-        if ch == '"' || ch == '\'' {
-            if !buf.is_empty() {
-                out.push((buf.clone(), None));
-                buf.clear();
-            }
-            in_string = true;
-            string_delim = ch;
-            buf.push(ch);
-            continue;
-        }
-
-        if ch.is_alphanumeric() || ch == '_' {
-            buf.push(ch);
-            // continue to build word
-            continue;
-        } else {
-            if !buf.is_empty() {
-                let cls = if keywords.contains(&buf.as_str()) {
-                    Some("hl-keyword")
-                } else {
-                    None
-                };
-                out.push((buf.clone(), cls));
-                buf.clear();
-            }
-            out.push((ch.to_string(), None));
-        }
-    }
-    if !buf.is_empty() {
-        let cls = if keywords.contains(&buf.as_str()) {
-            Some("hl-keyword")
-        } else {
-            None
-        };
-        out.push((buf, cls));
-    }
-    out
-}
-
-fn position_to_offset(src: &str, pos: &Position) -> Option<usize> {
-    let mut offset = 0usize;
-    for (line_idx, line) in src.split_inclusive('\n').enumerate() {
-        if line_idx as u32 == pos.line {
-            let mut char_count = 0usize;
-            for (byte_idx, _) in line.char_indices() {
-                if char_count == pos.character as usize {
-                    return Some(offset + byte_idx);
-                }
-                char_count += 1;
-            }
-            if char_count == pos.character as usize {
-                return Some(offset + line.len());
-            }
-            return None;
-        }
-        offset += line.len();
-    }
-
-    // Allow positions that point to the end of the file
-    if pos.line as usize == src.lines().count() && pos.character == 0 {
-        return Some(src.len());
-    }
-
-    None
-}
-
-fn range_to_offsets(src: &str, range: &Range) -> Option<(usize, usize)> {
-    let start = position_to_offset(src, &range.start)?;
-    let end = position_to_offset(src, &range.end)?;
-    Some((start.min(end), end.max(start)))
-}
+use std::sync::Arc;
 
 fn render_hover_text(info: &shapels::HoverInfo) -> String {
     if let Some(shape) = &info.shape {
@@ -121,96 +20,181 @@ fn render_hover_text(info: &shapels::HoverInfo) -> String {
     }
 }
 
-fn split_lines_with_metadata(
-    code: &str,
+fn is_keyword(token: &str) -> bool {
+    matches!(
+        token,
+        "and"
+            | "as"
+            | "assert"
+            | "break"
+            | "class"
+            | "continue"
+            | "def"
+            | "del"
+            | "elif"
+            | "else"
+            | "except"
+            | "False"
+            | "finally"
+            | "for"
+            | "from"
+            | "global"
+            | "if"
+            | "import"
+            | "in"
+            | "is"
+            | "lambda"
+            | "None"
+            | "nonlocal"
+            | "not"
+            | "or"
+            | "pass"
+            | "raise"
+            | "return"
+            | "True"
+            | "try"
+            | "while"
+            | "with"
+            | "yield"
+    )
+}
+
+fn highlight_classes(line: &str) -> Vec<Option<&'static str>> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut classes = vec![None; chars.len()];
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '"' || ch == '\'' {
+            let quote = ch;
+            classes[i] = Some("hl-string");
+            i += 1;
+            while i < chars.len() {
+                classes[i] = Some("hl-string");
+                let cur = chars[i];
+                if cur == quote && (i == 0 || chars[i - 1] != '\\') {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+
+        if ch.is_alphabetic() || ch == '_' {
+            let start = i;
+            i += 1;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let token: String = chars[start..i].iter().collect();
+            if is_keyword(&token) {
+                for idx in start..i {
+                    classes[idx] = Some("hl-keyword");
+                }
+            }
+            continue;
+        }
+
+        i += 1;
+    }
+
+    classes
+}
+
+fn diag_mask_for_line(line_index: u32, line_len: u32, diagnostics: &[Diagnostic]) -> Vec<bool> {
+    let mut mask = vec![false; line_len as usize];
+    for diag in diagnostics {
+        let range = &diag.range;
+        if line_index < range.start.line || line_index > range.end.line {
+            continue;
+        }
+        let start_char = if line_index == range.start.line {
+            range.start.character
+        } else {
+            0
+        };
+        let end_char = if line_index == range.end.line {
+            range.end.character
+        } else {
+            line_len
+        };
+        let start_char = start_char.min(line_len);
+        let end_char = end_char.min(line_len);
+        if end_char <= start_char {
+            continue;
+        }
+        for idx in start_char..end_char {
+            if let Some(slot) = mask.get_mut(idx as usize) {
+                *slot = true;
+            }
+        }
+    }
+    mask
+}
+
+fn build_line_spans(
+    line: &str,
+    line_index: u32,
     diagnostics: &[Diagnostic],
-    hover_entries: &[(Range, shapels::HoverInfo)],
-) -> Vec<LineRender> {
-    let mut diag_ranges: Vec<(usize, usize, String)> = diagnostics
-        .iter()
-        .filter_map(|d| range_to_offsets(code, &d.range).map(|(s, e)| (s, e, d.message.clone())))
-        .collect();
-    diag_ranges.sort_by_key(|(s, _, _)| *s);
-
-    let mut hover_ranges: Vec<(usize, usize, String)> = hover_entries
-        .iter()
-        .filter_map(|(range, info)| {
-            range_to_offsets(code, range).map(|(s, e)| (s, e, render_hover_text(info)))
-        })
-        .collect();
-    hover_ranges.sort_by_key(|(s, _, _)| *s);
-
-    let mut lines = Vec::new();
-    let mut line_start = 0usize;
-
-    for line in code.split('\n') {
-        let line_len = line.len();
-        let line_end = line_start + line_len;
-
-        let mut boundaries: Vec<usize> = vec![line_start, line_end];
-        for (s, e, _) in diag_ranges.iter().chain(hover_ranges.iter()) {
-            let start = (*s).max(line_start).min(line_end);
-            let end = (*e).max(line_start).min(line_end);
-            if start < end {
-                boundaries.push(start);
-                boundaries.push(end);
-            }
-        }
-
-        boundaries.sort_unstable();
-        boundaries.dedup();
-
-        let mut segments = Vec::new();
-        for window in boundaries.windows(2) {
-            let seg_start = window[0];
-            let seg_end = window[1];
-            if seg_start >= seg_end {
-                continue;
-            }
-            let text = line[(seg_start - line_start)..(seg_end - line_start)].to_string();
-
-            let has_diag = diag_ranges
-                .iter()
-                .any(|(s, e, _)| seg_start < *e && seg_end > *s);
-
-            segments.push(RenderSegment { text, has_diag });
-        }
-
-        if segments.is_empty() {
-            segments.push(RenderSegment {
-                text: line.to_string(),
-                has_diag: false,
-            });
-        }
-
-        let mut virtual_texts = HashSet::new();
-        for (s, e, msg) in diag_ranges.iter() {
-            if *s < line_end && *e > line_start {
-                virtual_texts.insert(msg.clone());
-            }
-        }
-
-        lines.push(LineRender {
-            segments,
-            virtual_texts: virtual_texts.into_iter().collect(),
-        });
-
-        // account for the stripped '\n'
-        line_start = line_end + 1;
+) -> Vec<(String, String)> {
+    let chars: Vec<char> = line.chars().collect();
+    if chars.is_empty() {
+        return vec![(" ".to_string(), String::new())];
     }
 
-    // preserve trailing empty line if code ends with newline
-    if code.ends_with('\n') {
-        lines.push(LineRender {
-            segments: vec![RenderSegment {
-                text: String::new(),
-                has_diag: false,
-            }],
-            virtual_texts: Vec::new(),
-        });
+    let highlight = highlight_classes(line);
+    let diag_mask = diag_mask_for_line(line_index, chars.len() as u32, diagnostics);
+
+    let mut spans = Vec::new();
+    let mut current_class = String::new();
+    let mut current_text = String::new();
+
+    for (idx, ch) in chars.iter().enumerate() {
+        let mut class = String::new();
+        if let Some(Some(hl)) = highlight.get(idx) {
+            class.push_str(hl);
+        }
+        if diag_mask.get(idx).copied().unwrap_or(false) {
+            if !class.is_empty() {
+                class.push(' ');
+            }
+            class.push_str("diag-range");
+        }
+
+        if class != current_class {
+            if !current_text.is_empty() {
+                spans.push((current_text.clone(), current_class.clone()));
+                current_text.clear();
+            }
+            current_class = class;
+        }
+        current_text.push(*ch);
     }
 
-    lines
+    if !current_text.is_empty() || spans.is_empty() {
+        spans.push((current_text, current_class));
+    }
+
+    spans
+}
+
+fn diag_messages_for_line(line_index: u32, diagnostics: &[Diagnostic]) -> Vec<String> {
+    let mut messages = Vec::new();
+    let mut seen = HashSet::new();
+    for diag in diagnostics {
+        if diag.range.start.line == line_index {
+            let message = diag.message.clone();
+            if seen.insert(message.clone()) {
+                messages.push(message);
+            }
+        }
+    }
+    messages
+}
+
+fn parse_px(value: &str) -> f64 {
+    value.trim().trim_end_matches("px").parse::<f64>().unwrap_or(0.0)
 }
 
 /// Code text prefilled with code, the user can modify it.
@@ -222,166 +206,193 @@ fn CodeInput<'a>(
     initial_code: &'a str,
     #[prop(optional, into)] wrapper_class: Option<String>,
 ) -> impl IntoView {
-    let (code, set_code) = signal(initial_code.to_string());
-    let text_ref = NodeRef::<leptos::html::Textarea>::new();
-    let overlay_ref = NodeRef::<leptos::html::Pre>::new();
+    let code = RwSignal::new(initial_code.to_string());
+    let analysis = RwSignal::new(Arc::new(analyze_source(initial_code)));
+
+    let hover_text = RwSignal::new(None::<String>);
+    let hover_pos = RwSignal::new((0.0_f64, 0.0_f64));
+    let char_width = RwSignal::new(0.0_f64);
+    let line_height = RwSignal::new(0.0_f64);
+    let padding_left = RwSignal::new(0.0_f64);
+    let padding_top = RwSignal::new(0.0_f64);
+    let did_measure = RwSignal::new(false);
+
+    let input_ref = NodeRef::<leptos::html::Textarea>::new();
+    let overlay_ref = NodeRef::<leptos::html::Div>::new();
+    let wrapper_ref = NodeRef::<leptos::html::Div>::new();
     let measure_ref = NodeRef::<leptos::html::Span>::new();
-    let (hover_popup, set_hover_popup) = signal(None::<(usize, f64, String)>);
-    let analysis_store = StoredValue::new_local(Rc::new(analyze_source(initial_code)));
+
+    Effect::new(move |_| {
+        let src = code.get();
+        analysis.set(Arc::new(analyze_source(&src)));
+    });
+
+    Effect::new(move |_| {
+        if did_measure.get() {
+            return;
+        }
+
+        let Some(measure) = measure_ref.get() else {
+            return;
+        };
+        let rect = measure
+            .unchecked_ref::<Element>()
+            .get_bounding_client_rect();
+        char_width.set(rect.width());
+        line_height.set(rect.height());
+
+        if let Some(input) = input_ref.get() {
+            if let Ok(Some(style)) = window().get_computed_style(&input) {
+                padding_left
+                    .set(parse_px(&style.get_property_value("padding-left").unwrap_or_default()));
+                padding_top
+                    .set(parse_px(&style.get_property_value("padding-top").unwrap_or_default()));
+            }
+        }
+        did_measure.set(true);
+    });
+
+    let sync_scroll = move || {
+        if let (Some(input), Some(overlay)) = (input_ref.get(), overlay_ref.get()) {
+            overlay.set_scroll_top(input.scroll_top());
+            overlay.set_scroll_left(input.scroll_left());
+        }
+    };
+
+    let on_input = move |ev| {
+        let value = event_target_value(&ev);
+        code.set(value);
+        sync_scroll();
+    };
+
+    let on_mouse_move = move |ev: MouseEvent| {
+        let Some(input) = input_ref.get() else {
+            return;
+        };
+        let Some(wrapper) = wrapper_ref.get() else {
+            return;
+        };
+
+        let rect = input
+            .unchecked_ref::<Element>()
+            .get_bounding_client_rect();
+        let mut x = ev.client_x() as f64 - rect.left() - padding_left.get_untracked();
+        let mut y = ev.client_y() as f64 - rect.top() - padding_top.get_untracked();
+
+        x += input.scroll_left() as f64;
+        y += input.scroll_top() as f64;
+
+        if x < 0.0 || y < 0.0 {
+            hover_text.set(None);
+            return;
+        }
+
+        let line_h = line_height.get_untracked();
+        let char_w = char_width.get_untracked();
+        if line_h <= 0.0 || char_w <= 0.0 {
+            return;
+        }
+
+        let line = (y / line_h).floor() as u32;
+        let mut character = (x / char_w).floor() as u32;
+
+        let src = code.get_untracked();
+        let lines: Vec<&str> = src.split('\n').collect();
+        if line as usize >= lines.len() {
+            hover_text.set(None);
+            return;
+        }
+        let max_char = lines[line as usize].chars().count() as u32;
+        if character > max_char {
+            character = max_char;
+        }
+
+        let analysis = analysis.get_untracked();
+        if let Some(info) = analysis.hover(Position { line, character }) {
+            hover_text.set(Some(render_hover_text(info)));
+            let wrapper_rect = wrapper
+                .unchecked_ref::<Element>()
+                .get_bounding_client_rect();
+            let popup_x = ev.client_x() as f64 - wrapper_rect.left();
+            let popup_y = ev.client_y() as f64 - wrapper_rect.top();
+            hover_pos.set((popup_x, popup_y));
+        } else {
+            hover_text.set(None);
+        }
+    };
+
+    let on_mouse_leave = move |_| {
+        hover_text.set(None);
+    };
+
+    let overlay_view = move || {
+        let analysis = analysis.get();
+        let diagnostics = &analysis.diagnostics;
+        let src = code.get();
+        let lines: Vec<&str> = src.split('\n').collect();
+        lines
+            .into_iter()
+            .enumerate()
+            .map(|(line_idx, line)| {
+                let line_index = line_idx as u32;
+                let spans = build_line_spans(line, line_index, diagnostics);
+                let messages = diag_messages_for_line(line_index, diagnostics);
+                view! {
+                    <div class="code-line">
+                        <span class="code-line-text">
+                            {spans
+                                .into_iter()
+                                .map(|(text, class_name)| view! { <span class=class_name>{text}</span> }.into_view())
+                                .collect_view()}
+                        </span>
+                        {(!messages.is_empty()).then(|| {
+                            view! {
+                                <span class="diag-line-messages">
+                                    {messages
+                                        .into_iter()
+                                        .map(|message| view! { <span class="diag-virtual">{message}</span> })
+                                        .collect_view()}
+                                </span>
+                            }
+                        })}
+                    </div>
+                }
+            })
+            .collect_view()
+    };
+
     let wrapper_class = wrapper_class.unwrap_or_default();
-    let wrapper_class = format!("code-wrapper {}", wrapper_class).trim().to_string();
 
     view! {
-        <div class=wrapper_class>
-            <pre class="code-overlay" aria-hidden="true" node_ref=overlay_ref>
-                {move || {
-                    // refresh analysis once per render
-                    analysis_store.set_value(Rc::new(analyze_source(&code.get())));
-                    let current = analysis_store.get_value();
-                    split_lines_with_metadata(
-                        &code.get(),
-                        current.diagnostics.as_slice(),
-                        current.hover_entries.as_slice(),
-                    )
-                    .into_iter()
-                    .enumerate()
-                    .map(|(_line_idx, line)| {
-                            let segments = line.segments.into_iter().map(|segment| {
-                                let range_class = if segment.has_diag {
-                                    "diag-range"
-                                } else {
-                                    "diag-range diag-none"
-                                };
-                                let tokens = highlight_tokens(&segment.text);
-                                view! {
-                                    <span class="code-span">
-                                        {tokens.into_iter().map(move |(txt, hl)| {
-                                            let cls = hl
-                                                .map(|c| format!("{range_class} {c}"))
-                                                .unwrap_or_else(|| range_class.to_string());
-                                            view! { <span class=cls>{txt}</span> }
-                                        }).collect_view()}
-                                    </span>
-                                }
-                                .into_view()
-                            });
-
-                            let virtuals: Vec<_> = line
-                                .virtual_texts
-                                .into_iter()
-                                .map(|msg| {
-                                    view! { <span class="diag-virtual">{" ⟫ "}{msg}</span> }
-                                        .into_view()
-                                })
-                                .collect();
-
-                        view! {
-                            <div class="code-line">
-                                <span class="code-line-text">{segments.collect_view()}</span>
-                                <span class="diag-line-messages">{virtuals.into_iter().collect_view()}</span>
-                            </div>
-                        }
-                        .into_view()
-                    })
-                    .collect_view()
-                }}
-            </pre>
+        <div class=format!("code-wrapper {}", wrapper_class) node_ref=wrapper_ref>
+            <div class="code-overlay" node_ref=overlay_ref>
+                {overlay_view}
+            </div>
             <textarea
                 class="code-input"
-                // update the signal on each keystroke
-                bind:value=(code, set_code)
-                spellcheck=false
-                wrap="off"
-                node_ref=text_ref
-                on:scroll=move |_| {
-                    if let (Some(textarea), Some(overlay)) = (text_ref.get(), overlay_ref.get()) {
-                        overlay.set_scroll_left(textarea.scroll_left());
-                        overlay.set_scroll_top(textarea.scroll_top());
-                    }
-                }
-                on:mousemove=move |ev| {
-                    if let (Some(textarea), Some(measure)) = (text_ref.get(), measure_ref.get()) {
-                        if let Some((char_w, line_h, pad_left, pad_top)) =
-                            measure_metrics(&textarea, &measure)
-                        {
-                            let x = ev.offset_x() as f64 + textarea.scroll_left() as f64 - pad_left;
-                            let y = ev.offset_y() as f64 + textarea.scroll_top() as f64 - pad_top;
-                            if char_w > 0.0 && line_h > 0.0 && x >= 0.0 && y >= 0.0 {
-                                let y = (y - (line_h * 0.25)).max(0.0);
-                                let line = (y / line_h).floor() as u32;
-                                let character = (x / char_w).floor() as u32;
-                                let pos = Position { line, character };
-                                analysis_store.with_value(|analysis| {
-                                    if let Some(info) = analysis.hover(pos) {
-                                        set_hover_popup.set(Some((
-                                            line as usize,
-                                            x,
-                                            render_hover_text(info),
-                                        )));
-                                    } else {
-                                        set_hover_popup.set(None);
-                                    }
-                                });
-                            }
-                        }
-                    }
-                }
-                on:mouseleave=move |_| set_hover_popup.set(None)
-            ></textarea>
-            <span class="measure-char" aria-hidden="true" node_ref=measure_ref>"M"</span>
+                node_ref=input_ref
+                on:input=on_input
+                on:scroll=move |_| sync_scroll()
+                on:mousemove=on_mouse_move
+                on:mouseleave=on_mouse_leave
+                prop:value=move || code.get()
+            />
+            <span class="measure-char" node_ref=measure_ref>"M"</span>
             {move || {
-                hover_popup
-                    .get()
-                    .map(|(line, x, text)| {
-                        let (top, left) = if let (Some(textarea), Some(measure)) =
-                            (text_ref.get(), measure_ref.get())
-                        {
-                        if let Some((char_w, line_h, pad_left, _pad_top)) =
-                            measure_metrics(&textarea, &measure)
-                            {
-                                let scroll_top = textarea.scroll_top() as f64;
-                                let scroll_left = textarea.scroll_left() as f64;
-                                let top = (line as f64) * line_h - scroll_top;
-                                let left = x - scroll_left + char_w * 0.5 + 8.0 + pad_left;
-                                (top, left)
-                            } else {
-                                (0.0, 0.0)
-                            }
-                        } else {
-                            (0.0, 0.0)
-                        };
-                        view! {
-                            <div class="hover-popup" style=format!("top: {}px; left: {}px;", top, left)>
-                                {text}
-                            </div>
-                        }
-                    })
+                hover_text.get().map(|text| {
+                    let (x, y) = hover_pos.get();
+                    view! {
+                        <div
+                            class="hover-popup"
+                            style=format!("left: {:.2}px; top: {:.2}px;", x + 12.0, y + 12.0)
+                        >
+                            {text}
+                        </div>
+                    }
+                })
             }}
         </div>
     }
-}
-
-fn measure_metrics(
-    textarea: &HtmlTextAreaElement,
-    measure: &HtmlSpanElement,
-) -> Option<(f64, f64, f64, f64)> {
-    let m_elem: &HtmlElement = measure.unchecked_ref();
-    let char_w = m_elem.offset_width() as f64;
-    let line_h = m_elem.offset_height() as f64;
-
-    let element: &HtmlElement = textarea.unchecked_ref();
-    let window = window();
-    let style = window.get_computed_style(element).ok()??;
-    let pad_left = parse_px(style.get_property_value("padding-left").ok());
-    let pad_top = parse_px(style.get_property_value("padding-top").ok());
-
-    Some((char_w, line_h, pad_left, pad_top))
-}
-
-fn parse_px(value: Option<String>) -> f64 {
-    value
-        .and_then(|s| s.trim_end_matches("px").parse::<f64>().ok())
-        .unwrap_or(0.0)
 }
 
 /// Default Home Page

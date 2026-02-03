@@ -496,8 +496,7 @@ def matmul_permute(x: Float[torch.Tensor, "B X Y"], y):
 /// A big empty playground for testing code in a single page.
 #[component]
 pub fn Playground() -> impl IntoView {
-    let prefilled_code_snippet = r#"
-from jaxtyping import Float
+    let prefilled_code_snippet = r#"from jaxtyping import Float
 import torch
 
 
@@ -521,10 +520,10 @@ def some_function(x: Float[torch.Tensor, "B X Y"], y, linear: UserLinear):
     # shapels here jumps to UserLinear.forward and runs inference given
     # the shapes of x and y (that are known at this point)
     z = linear(x, y)
-    # fine: x has a shape identical shape as the hint,
-    # y is alpha compatible (same dimensions, different name) with the signature so it is fine
+    # fine: x has a shape identical to annotated_method's 1st arg hint and
+    # y is alpha compatible (same dimensions, different name) with the 2nd arg hint
     fine, not_ones = linear.annotated_method(x, y)
-    # this  would not be fine since now the second argument is not compatible with the type
+    # this would not be fine since now the second argument is not compatible with the type
     # hint, so shapels reports a diagnostics
     not_fine = linear.annotated_method(x, x)
 "#;

@@ -96,6 +96,13 @@ fn highlight_classes(line: &str) -> Vec<Option<&'static str>> {
             continue;
         }
 
+        if ch == '#' {
+            for idx in i..chars.len() {
+                classes[idx] = Some("hl-comment");
+            }
+            break;
+        }
+
         i += 1;
     }
 
@@ -487,6 +494,7 @@ def matmul_permute(x: Float[torch.Tensor, "B X Y"], y):
 }
 
 /// A big empty playground for testing code in a single page.
+#[component]
 pub fn Playground() -> impl IntoView {
     let prefilled_code_snippet = r#"
 from jaxtyping import Float

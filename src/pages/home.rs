@@ -222,6 +222,7 @@ fn CodeInput<'a>(
     let line_height = RwSignal::new(0.0_f64);
     let padding_left = RwSignal::new(0.0_f64);
     let padding_top = RwSignal::new(0.0_f64);
+    let padding_bottom = RwSignal::new(0.0_f64);
     let did_measure = RwSignal::new(false);
 
     let input_ref = NodeRef::<leptos::html::Textarea>::new();
@@ -242,19 +243,24 @@ fn CodeInput<'a>(
         let Some(measure) = measure_ref.get() else {
             return;
         };
-        let rect = measure
-            .unchecked_ref::<Element>()
-            .get_bounding_client_rect();
-        char_width.set(rect.width());
-        line_height.set(rect.height());
-
         if let Some(input) = input_ref.get() {
             if let Ok(Some(style)) = window().get_computed_style(&input) {
                 padding_left
                     .set(parse_px(&style.get_property_value("padding-left").unwrap_or_default()));
                 padding_top
                     .set(parse_px(&style.get_property_value("padding-top").unwrap_or_default()));
+                padding_bottom
+                    .set(parse_px(&style.get_property_value("padding-bottom").unwrap_or_default()));
             }
+        }
+
+        let rect = measure
+            .unchecked_ref::<Element>()
+            .get_bounding_client_rect();
+        char_width.set(rect.width());
+        let computed_height = rect.height();
+        if computed_height > 0.0 {
+            line_height.set(computed_height);
         }
         did_measure.set(true);
     });
@@ -268,7 +274,15 @@ fn CodeInput<'a>(
 
     let on_input = move |ev| {
         let value = event_target_value(&ev);
+        let line_count = value.split('\n').count().max(1) as f64;
         code.set(value);
+        if let Some(input) = input_ref.get() {
+            let scroll_height = input.scroll_height() as f64;
+            let adjusted = scroll_height - padding_top.get_untracked() - padding_bottom.get_untracked();
+            if adjusted > 0.0 {
+                line_height.set(adjusted / line_count);
+            }
+        }
         sync_scroll();
     };
 

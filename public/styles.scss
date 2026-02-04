@@ -73,6 +73,7 @@ button {
 
 .code-wrapper {
   --code-font: "Monaspace Neon", "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --code-line-height: 1.4rem;
   position: relative;
   display: grid;
   width: min(900px, 92vw);
@@ -89,7 +90,7 @@ button {
   border-radius: 12px;
   background: #EFEFEF;
   color: #1A1A1A;
-  line-height: 1.4rem;
+  line-height: var(--code-line-height);
   box-sizing: border-box;
   pointer-events: none;
   width: 100%;
@@ -107,7 +108,7 @@ button {
   border: 1px solid transparent;
   border-radius: 12px;
   font: inherit;
-  line-height: 1.4rem;
+  line-height: var(--code-line-height);
   background: transparent;
   color: transparent;
   caret-color: #111827;
@@ -121,12 +122,12 @@ button {
 }
 
 .code-wrapper--playground {
-  min-height: calc(30 * 1.4rem + 2rem);
+  min-height: calc(30 * var(--code-line-height) + 2rem);
 }
 
 .code-wrapper--playground .code-overlay,
 .code-wrapper--playground .code-input {
-  min-height: calc(30 * 1.4rem + 2rem);
+  min-height: calc(30 * var(--code-line-height) + 2rem);
 }
 
 .hl-keyword {
@@ -147,7 +148,7 @@ button {
   position: absolute;
   visibility: hidden;
   font: inherit;
-  line-height: 1.4rem;
+  line-height: var(--code-line-height);
   white-space: pre;
   font-family: var(--code-font);
 }

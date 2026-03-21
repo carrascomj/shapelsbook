@@ -130,6 +130,79 @@ button {
   min-height: calc(30 * var(--code-line-height) + 2rem);
 }
 
+.share-url-controls {
+  width: min(900px, 92vw);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.75rem auto 2rem;
+}
+
+.share-url-input {
+  flex: 1;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #D4D4D4;
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: #1A1A1A;
+  font-family: "Monaspace Neon", "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.share-url-copy-button {
+  appearance: none;
+  border: 1px solid #D81B60;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #FF5AA5 0%, #FF7A59 100%);
+  color: #FFF7FB;
+  font-family: "Monaspace Neon", monospace;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.85rem 1.1rem;
+  margin: 0;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(216, 27, 96, 0.22);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    filter 120ms ease;
+}
+
+.share-url-copy-button:hover {
+  filter: brightness(1.05);
+  box-shadow: 0 14px 28px rgba(216, 27, 96, 0.28);
+  transform: translateY(-1px);
+}
+
+.share-url-copy-button:active {
+  filter: brightness(0.96);
+  box-shadow: 0 6px 14px rgba(216, 27, 96, 0.22);
+  transform: translateY(1px) scale(0.99);
+}
+
+.share-url-copy-button:focus-visible {
+  outline: 3px solid rgba(255, 90, 165, 0.35);
+  outline-offset: 3px;
+}
+
+.share-url-copy-button--copied {
+  border-color: #C2185B;
+  background: linear-gradient(135deg, #FF6FB2 0%, #FF8A65 100%);
+  box-shadow: 0 12px 28px rgba(216, 27, 96, 0.3);
+}
+
+.share-url-status {
+  min-width: 10rem;
+  color: #B0004B;
+  font-family: "Monaspace Neon", monospace;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .hl-keyword {
   color: #005CC5 !important;
   font-weight: 600;

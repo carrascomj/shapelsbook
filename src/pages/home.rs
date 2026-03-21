@@ -3,10 +3,45 @@ use leptos::prelude::window;
 use leptos::prelude::*;
 use leptos::wasm_bindgen::JsCast;
 use leptos::web_sys::Element;
+use leptos_router::hooks::use_params_map;
 use lsp_types::{Diagnostic, Position};
 use shapels::analyze_source;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
+
+const PLAYGROUND_ROUTE_PARAM: &str = "code";
+
+fn app_base_path() -> &'static str {
+    if cfg!(debug_assertions) {
+        ""
+    } else {
+        "/shapelsbook"
+    }
+}
+
+fn encode_playground_code(code: &str) -> String {
+    use base64::Engine as _;
+    let compressed = miniz_oxide::deflate::compress_to_vec_zlib(code.as_bytes(), 9);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(compressed)
+}
+
+fn decode_playground_code(encoded: &str) -> Option<String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .ok()?;
+    miniz_oxide::inflate::decompress_to_vec_zlib(&bytes)
+        .ok()
+        .and_then(|decompressed| String::from_utf8(decompressed).ok())
+        .or_else(|| String::from_utf8(bytes).ok())
+}
+
+fn current_playground_hash_payload() -> Option<String> {
+    let hash = window().location().hash().ok()?;
+    let encoded = hash.trim_start_matches('#');
+    (!encoded.is_empty()).then(|| encoded.to_string())
+}
 
 fn render_hover_text(info: &shapels::HoverInfo) -> String {
     if let Some(shape) = &info.shape {
@@ -201,7 +236,11 @@ fn diag_messages_for_line(line_index: u32, diagnostics: &[Diagnostic]) -> Vec<St
 }
 
 fn parse_px(value: &str) -> f64 {
-    value.trim().trim_end_matches("px").parse::<f64>().unwrap_or(0.0)
+    value
+        .trim()
+        .trim_end_matches("px")
+        .parse::<f64>()
+        .unwrap_or(0.0)
 }
 
 /// Code text prefilled with code, the user can modify it.
@@ -209,12 +248,13 @@ fn parse_px(value: &str) -> f64 {
 /// On change, it reruns the language serve, updates the hovers
 /// and the diagnostics.
 #[component]
-fn CodeInput<'a>(
-    initial_code: &'a str,
+fn CodeInput(
+    #[prop(into)] initial_code: String,
+    #[prop(optional)] on_code_change: Option<WriteSignal<String>>,
     #[prop(optional, into)] wrapper_class: Option<String>,
 ) -> impl IntoView {
-    let code = RwSignal::new(initial_code.to_string());
-    let analysis = RwSignal::new(Arc::new(analyze_source(initial_code)));
+    let code = RwSignal::new(initial_code.clone());
+    let analysis = RwSignal::new(Arc::new(analyze_source(&initial_code)));
 
     let hover_text = RwSignal::new(None::<String>);
     let hover_pos = RwSignal::new((0.0_f64, 0.0_f64));
@@ -245,12 +285,17 @@ fn CodeInput<'a>(
         };
         if let Some(input) = input_ref.get() {
             if let Ok(Some(style)) = window().get_computed_style(&input) {
-                padding_left
-                    .set(parse_px(&style.get_property_value("padding-left").unwrap_or_default()));
-                padding_top
-                    .set(parse_px(&style.get_property_value("padding-top").unwrap_or_default()));
-                padding_bottom
-                    .set(parse_px(&style.get_property_value("padding-bottom").unwrap_or_default()));
+                padding_left.set(parse_px(
+                    &style.get_property_value("padding-left").unwrap_or_default(),
+                ));
+                padding_top.set(parse_px(
+                    &style.get_property_value("padding-top").unwrap_or_default(),
+                ));
+                padding_bottom.set(parse_px(
+                    &style
+                        .get_property_value("padding-bottom")
+                        .unwrap_or_default(),
+                ));
             }
         }
 
@@ -275,10 +320,14 @@ fn CodeInput<'a>(
     let on_input = move |ev| {
         let value = event_target_value(&ev);
         let line_count = value.split('\n').count().max(1) as f64;
-        code.set(value);
+        code.set(value.clone());
+        if let Some(on_code_change) = on_code_change {
+            on_code_change.set(value);
+        }
         if let Some(input) = input_ref.get() {
             let scroll_height = input.scroll_height() as f64;
-            let adjusted = scroll_height - padding_top.get_untracked() - padding_bottom.get_untracked();
+            let adjusted =
+                scroll_height - padding_top.get_untracked() - padding_bottom.get_untracked();
             if adjusted > 0.0 {
                 line_height.set(adjusted / line_count);
             }
@@ -294,9 +343,7 @@ fn CodeInput<'a>(
             return;
         };
 
-        let rect = input
-            .unchecked_ref::<Element>()
-            .get_bounding_client_rect();
+        let rect = input.unchecked_ref::<Element>().get_bounding_client_rect();
         let mut x = ev.client_x() as f64 - rect.left() - padding_left.get_untracked();
         let mut y = ev.client_y() as f64 - rect.top() - padding_top.get_untracked();
 
@@ -396,7 +443,7 @@ fn CodeInput<'a>(
                 on:scroll=move |_| sync_scroll()
                 on:mousemove=on_mouse_move
                 on:mouseleave=on_mouse_leave
-                prop:value=move || code.get()
+                prop:value=initial_code
             />
             <span class="measure-char" node_ref=measure_ref>"M"</span>
             {move || {
@@ -541,6 +588,41 @@ def some_function(x: Float[torch.Tensor, "B X Y"], y, linear: UserLinear):
     # hint, so shapels reports a diagnostics
     not_fine = linear.annotated_method(x, x)
 "#;
+    let params = use_params_map();
+    let initial_code = current_playground_hash_payload()
+        .and_then(|encoded| decode_playground_code(&encoded))
+        .or_else(|| {
+            params
+                .read_untracked()
+                .get(PLAYGROUND_ROUTE_PARAM)
+                .and_then(|encoded| decode_playground_code(&encoded))
+        })
+        .unwrap_or_else(|| prefilled_code_snippet.to_string());
+    let code = RwSignal::new(initial_code);
+    let copy_feedback_id = RwSignal::new(0_u64);
+    let copied_to_clipboard = RwSignal::new(false);
+    let share_url = Memo::new(move |_| {
+        let encoded = encode_playground_code(&code.get());
+        let origin = window().location().origin().unwrap_or_default();
+        format!("{origin}{}/playground#{encoded}", app_base_path())
+    });
+    let copy_share_url = move |_| {
+        let _ = window()
+            .navigator()
+            .clipboard()
+            .write_text(&share_url.get_untracked());
+        copied_to_clipboard.set(true);
+        let feedback_id = copy_feedback_id.get_untracked().wrapping_add(1);
+        copy_feedback_id.set(feedback_id);
+        set_timeout(
+            move || {
+                if copy_feedback_id.get_untracked() == feedback_id {
+                    copied_to_clipboard.set(false);
+                }
+            },
+            Duration::from_millis(1800),
+        );
+    };
 
     view! {
         <ErrorBoundary fallback=|errors| {
@@ -572,9 +654,37 @@ def some_function(x: Float[torch.Tensor, "B X Y"], y, linear: UserLinear):
                 </p>
                 <CodeInput
                     attr:spellcheck="false"
-                    initial_code=prefilled_code_snippet
+                    initial_code=code.get_untracked()
+                    on_code_change=code.write_only()
                     wrapper_class="code-wrapper--playground"
                 />
+                <label for="shareable-playground-url">"Share this playground"</label>
+                <div class="share-url-controls">
+                    <input
+                        id="shareable-playground-url"
+                        class="share-url-input"
+                        type="text"
+                        readonly
+                        prop:value=move || share_url.get()
+                    />
+                    <button
+                        type="button"
+                        class="share-url-copy-button"
+                        class:share-url-copy-button--copied=move || copied_to_clipboard.get()
+                        on:click=copy_share_url
+                    >
+                        {move || if copied_to_clipboard.get() { "Copied" } else { "Copy URL" }}
+                    </button>
+                    <span class="share-url-status" role="status" aria-live="polite">
+                        {move || {
+                            if copied_to_clipboard.get() {
+                                "Copied to clipboard"
+                            } else {
+                                ""
+                            }
+                        }}
+                    </span>
+                </div>
             </div>
         </ErrorBoundary>
     }

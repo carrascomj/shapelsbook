@@ -10,15 +10,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-const PLAYGROUND_ROUTE_PARAM: &str = "code";
+use crate::app_path::app_base_path;
 
-fn app_base_path() -> &'static str {
-    if cfg!(debug_assertions) {
-        ""
-    } else {
-        "/shapelsbook"
-    }
-}
+const PLAYGROUND_ROUTE_PARAM: &str = "code";
 
 fn encode_playground_code(code: &str) -> String {
     use base64::Engine as _;

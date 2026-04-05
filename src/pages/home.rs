@@ -256,7 +256,6 @@ fn CodeInput(
     let line_height = RwSignal::new(0.0_f64);
     let padding_left = RwSignal::new(0.0_f64);
     let padding_top = RwSignal::new(0.0_f64);
-    let padding_bottom = RwSignal::new(0.0_f64);
     let did_measure = RwSignal::new(false);
 
     let input_ref = NodeRef::<leptos::html::Textarea>::new();
@@ -285,11 +284,11 @@ fn CodeInput(
                 padding_top.set(parse_px(
                     &style.get_property_value("padding-top").unwrap_or_default(),
                 ));
-                padding_bottom.set(parse_px(
-                    &style
-                        .get_property_value("padding-bottom")
-                        .unwrap_or_default(),
-                ));
+                let computed_line_height =
+                    parse_px(&style.get_property_value("line-height").unwrap_or_default());
+                if computed_line_height > 0.0 {
+                    line_height.set(computed_line_height);
+                }
             }
         }
 
@@ -298,7 +297,7 @@ fn CodeInput(
             .get_bounding_client_rect();
         char_width.set(rect.width());
         let computed_height = rect.height();
-        if computed_height > 0.0 {
+        if computed_height > 0.0 && line_height.get_untracked() <= 0.0 {
             line_height.set(computed_height);
         }
         did_measure.set(true);
@@ -313,18 +312,9 @@ fn CodeInput(
 
     let on_input = move |ev| {
         let value = event_target_value(&ev);
-        let line_count = value.split('\n').count().max(1) as f64;
         code.set(value.clone());
         if let Some(on_code_change) = on_code_change {
             on_code_change.set(value);
-        }
-        if let Some(input) = input_ref.get() {
-            let scroll_height = input.scroll_height() as f64;
-            let adjusted =
-                scroll_height - padding_top.get_untracked() - padding_bottom.get_untracked();
-            if adjusted > 0.0 {
-                line_height.set(adjusted / line_count);
-            }
         }
         sync_scroll();
     };
